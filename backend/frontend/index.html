@@ -1,1 +1,20 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <h1>AI Gaming Coach</h1>
+  <button onclick="analyze()">Analyze</button>
+  <pre id="out"></pre>
+
+  <script>
+    function analyze() {
+      fetch("http://127.0.0.1:5000/analyze")
+        .then(r => r.json())
+        .then(d => {
+          document.getElementById("out").innerText =
+            JSON.stringify(d, null, 2);
+        });
+    }
+  </script>
+</body>
+</html>
 
