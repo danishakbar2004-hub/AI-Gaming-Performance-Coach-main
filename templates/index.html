@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>AI Valorant Performance Coach</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/countup.js@2.6.2/dist/countUp.min.js"></script>
+
+<style>
+body {
+    margin: 0;
+    font-family: 'Segoe UI', sans-serif;
+    background: radial-gradient(circle at 30% 20%, #101d30, #070b14 70%);
+    color: white;
+}
+
+.container { padding: 40px; }
+
+.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.logout-btn {
+    background: #ff3b3b;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr 1fr;
+    gap: 25px;
+    margin-top: 40px;
+}
+
+.card {
+    background: rgba(255,255,255,0.05);
+    border-radius: 20px;
+    padding: 25px;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 0 40px rgba(0, 200, 255, 0.05);
+    transition: 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 0 60px rgba(0, 255, 200, 0.2);
+}
+
+.big-card { grid-row: span 2; }
+
+canvas {
+    width: 100% !important;
+    height: 250px !important;
+}
+
+.section-title {
+    font-size: 18px;
+    margin-bottom: 15px;
+    opacity: 0.8;
+}
+
+.hidden { display: none; }
+
+.upload-section { margin-top: 60px; }
+
+.compare-btn {
+    background: linear-gradient(90deg,#ffaa00,#ff6600);
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    color: black;
+    font-weight: bold;
+    margin-top: 10px;
+    cursor: pointer;
+}
+.status-badge {
+    margin-top:10px;
+    padding:8px 15px;
+    border-radius:20px;
+    display:inline-block;
+    background:rgba(0,255,150,0.15);
+    color:#00ff9c;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<div class="topbar">
+<h1>AI Valorant Performance Coach</h1>
+<div id="userSection"></div>
+</div>
+
+<div id="loginSection"></div>
+
+<div id="dashboardSection" class="hidden">
+
+<div class="grid">
+
+<div class="card big-card">
+<div class="section-title">Aim Accuracy</div>
+<canvas id="aimGauge"></canvas>
+</div>
+
+<div class="card">
+<div class="section-title">Reaction Time</div>
+<h1 id="reactionValue">0 ms</h1>
+<p id="reactionLabel">Analyzing...</p>
+</div>
+
+<div class="card">
+<div class="section-title">KD Ratio</div>
+<canvas id="kdGauge"></canvas>
+</div>
+
+<div class="card" style="grid-column: span 2;">
+<div class="section-title">Session Summary</div>
+<canvas id="summaryChart"></canvas>
+</div>
+
+<div class="card">
+<div class="section-title">Performance Trend</div>
+<canvas id="trendChart"></canvas>
+</div>
+
+</div>
+
+<div class="upload-section">
+<h3>Upload Match</h3>
+<input type="file" id="videoFile"><br><br>
+<button class="compare-btn" onclick="analyzeVideo()">Analyze Match</button>
+<div id="comparisonResult"></div>
+</div>
+
+</div>
+</div>
+
+<script>
+const CLIENT_ID = "861763798863-bq6tkk0ah4kp6btmgnd97gfc64hpsliq.apps.googleusercontent.com";
+
+let aimChart, kdChart, trendChart, summaryChart;
+
+window.onload = function() {
+google.accounts.id.initialize({
+client_id: CLIENT_ID,
+callback: handleCredentialResponse
+});
+
+google.accounts.id.renderButton(
+document.getElementById("loginSection"),
+{ theme: "outline", size: "large", width: 350 }
+);
+};
+
+async function handleCredentialResponse(response) {
+const res = await fetch("/verify", {
+method: "POST",
+headers: { "Content-Type": "application/json" },
+body: JSON.stringify({ token: response.credential })
+});
+const data = await res.json();
+
+if (data.status === "success") {
+document.getElementById("loginSection").style.display="none";
+document.getElementById("dashboardSection").classList.remove("hidden");
+
+document.getElementById("userSection").innerHTML =
+`Welcome, ${data.user.name}
+<button class="logout-btn" onclick="logout()">Logout</button>`;
+} else {
+alert("Login failed");
+}
+}
+
+function logout() {
+google.accounts.id.disableAutoSelect();
+location.reload();
+}
+
+async function analyzeVideo() {
+
+const fileInput = document.getElementById("videoFile");
+if (!fileInput.files.length) {
+alert("Please upload a video file");
+return;
+}
+
+const formData = new FormData();
+formData.append("file", fileInput.files[0]);
+
+document.getElementById("comparisonResult").innerHTML = "Processing video...";
+
+const res = await fetch("/analyze", {
+method: "POST",
+body: formData
+});
+
+const data = await res.json();
+updateDashboard(data);
+}
+
+function updateDashboard(data){
+
+renderAimGauge(data.aim_accuracy);
+renderKDGauge(data.kd_ratio);
+renderTrendChart(data.trend);
+renderSummaryChart(data.trend);
+
+new CountUp('reactionValue', data.reaction_time).start();
+
+document.getElementById("reactionLabel").innerText =
+data.reaction_time < 240 ? "Elite Reaction" :
+data.reaction_time < 270 ? "Good Reaction" :
+"Needs Improvement";
+
+document.getElementById("comparisonResult").innerHTML =
+`<div class="status-badge">Movement Stability: ${data.movement_score}%</div>`;
+}
+
+function renderAimGauge(score){
+if(aimChart) aimChart.destroy();
+aimChart = new Chart(document.getElementById("aimGauge"),{
+type:"doughnut",
+data:{datasets:[{
+data:[score,100-score],
+backgroundColor:["#00ff9c","#1e2a38"],
+borderWidth:0
+}]},
+options:{
+rotation:-90,
+circumference:180,
+plugins:{legend:{display:false}}
+}
+});
+}
+
+function renderKDGauge(kd){
+if(kdChart) kdChart.destroy();
+let percent=Math.min(kd/3*100,100);
+kdChart=new Chart(document.getElementById("kdGauge"),{
+type:"doughnut",
+data:{datasets:[{
+data:[percent,100-percent],
+backgroundColor:["#ffaa00","#1e2a38"],
+borderWidth:0
+}]},
+options:{
+cutout:"70%",
+plugins:{legend:{display:false}}
+}
+});
+}
+
+function renderTrendChart(data){
+if(trendChart) trendChart.destroy();
+trendChart=new Chart(document.getElementById("trendChart"),{
+type:"line",
+data:{
+labels:data.map((_,i)=>i+1),
+datasets:[{
+data:data,
+borderColor:"#00ff9c",
+backgroundColor:"rgba(0,255,156,0.2)",
+tension:0.4,
+fill:true
+}]
+},
+options:{
+plugins:{legend:{display:false}},
+scales:{
+x:{ticks:{color:"white"}},
+y:{ticks:{color:"white"}}
+}
+}
+});
+}
+
+function renderSummaryChart(data){
+if(summaryChart) summaryChart.destroy();
+summaryChart=new Chart(document.getElementById("summaryChart"),{
+type:"line",
+data:{
+labels:data.map((_,i)=>i+1),
+datasets:[{
+data:data,
+borderColor:"#ffaa00",
+backgroundColor:"rgba(255,170,0,0.2)",
+tension:0.3,
+fill:true
+}]
+},
+options:{
+plugins:{legend:{display:false}},
+scales:{
+x:{ticks:{color:"white"}},
+y:{ticks:{color:"white"}}
+}
+}
+});
+}
+</script>
+
+</body>
+</html>
